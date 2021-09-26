@@ -1,0 +1,83 @@
+plugins {
+	id 'application'
+	id 'edu.sc.seis.launch4j' version '2.4.9'
+	id 'com.github.johnrengelman.shadow' version '6.1.0'
+}
+
+dependencies {
+	implementation(project(':jadx-core'))
+
+	implementation(project(":jadx-cli"))
+	implementation 'com.beust:jcommander:1.78'
+	implementation 'ch.qos.logback:logback-classic:1.2.3'
+
+	implementation 'com.fifesoft:rsyntaxtextarea:3.1.2'
+	implementation files('libs/jfontchooser-1.0.5.jar')
+	implementation 'hu.kazocsaba:image-viewer:1.2.3'
+
+	implementation 'com.google.code.gson:gson:2.8.6'
+	implementation 'org.apache.commons:commons-lang3:3.11'
+	implementation 'org.apache.commons:commons-text:1.9'
+
+	implementation 'io.reactivex.rxjava2:rxjava:2.2.20'
+	implementation "com.github.akarnokd:rxjava2-swing:0.3.7"
+	implementation 'com.android.tools.build:apksig:4.1.1'
+}
+
+application {
+	applicationName = 'jadx-gui'
+	mainClassName = 'jadx.gui.JadxGUI'
+}
+
+applicationDistribution.with {
+	into('') {
+		from '../'
+		include 'README.md'
+		include 'NOTICE'
+		include 'LICENSE'
+	}
+}
+
+jar {
+	manifest {
+		attributes(
+				"Main-Class": mainClassName,
+				"Class-Path": configurations.runtimeClasspath.collect { it.getName() }.join(' ')
+		)
+	}
+}
+
+shadowJar {
+	mergeServiceFiles()
+}
+
+startScripts {
+	// The option -XX:+UseG1GC is only relevant for Java 8. Starting with Java 9 G1GC is already the default GC
+	defaultJvmOpts = ['-Xms128M', '-Xmx4g', '-Dawt.useSystemAAFontSettings=lcd', '-Dswing.aatext=true', '-XX:+UseG1GC']
+	doLast {
+		def str = windowsScript.text
+		str = str.replaceAll('java.exe', 'javaw.exe')
+		str = str.replaceAll('"%JAVA_EXE%" %DEFAULT_JVM_OPTS%', 'start "jadx-gui" /B "%JAVA_EXE%" %DEFAULT_JVM_OPTS%')
+		windowsScript.text = str
+	}
+}
+
+launch4j {
+	mainClassName = 'jadx.gui.JadxGUI'
+	copyConfigurable = project.tasks.shadowJar.outputs.files
+	jar = "lib/${project.tasks.shadowJar.archiveFileName.get()}"
+	icon = "${projectDir}/src/main/resources/logos/jadx-logo.ico"
+	outfile = "jadx-gui-${version}.exe"
+	copyright = 'Skylot'
+	windowTitle = 'jadx'
+	companyName = 'jadx'
+	jreMinVersion = '1.8.0'
+	jvmOptions = ['-Dawt.useSystemAAFontSettings=lcd', '-Dswing.aatext=true', '-XX:+UseG1GC']
+	jreRuntimeBits = "64"
+	bundledJre64Bit = true
+	initialHeapPercent = 5
+	maxHeapSize = 4096
+	maxHeapPercent = 70
+	downloadUrl = 'https://adoptopenjdk.net/releases.html?variant=openjdk11&jvmVariant=hotspot#x64_win'
+	bundledJrePath = '%JAVA_HOME%'
+}

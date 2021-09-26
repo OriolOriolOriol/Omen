@@ -1,0 +1,150 @@
+plugins {
+	id 'com.github.ben-manes.versions' version '0.36.0'
+	id "com.diffplug.spotless" version "5.9.0"
+}
+
+ext.jadxVersion = System.getenv('JADX_VERSION') ?: "dev"
+version = jadxVersion
+println("jadx version: ${jadxVersion}")
+
+allprojects {
+	apply plugin: 'java'
+	apply plugin: 'checkstyle'
+
+	version = jadxVersion
+
+	sourceCompatibility = JavaVersion.VERSION_1_8
+	targetCompatibility = JavaVersion.VERSION_1_8
+
+	tasks.withType(JavaCompile) {
+		if (!"$it".contains(':jadx-samples:')) {
+			options.compilerArgs << '-Xlint' << '-Xlint:unchecked' << '-Xlint:deprecation'
+		}
+	}
+
+	compileJava {
+		options.encoding = "UTF-8"
+	}
+
+	jar {
+		manifest {
+			mainAttributes('jadx-version': jadxVersion)
+		}
+	}
+
+	dependencies {
+		implementation 'org.slf4j:slf4j-api:1.7.30'
+		compileOnly 'org.jetbrains:annotations:20.1.0'
+
+		testImplementation 'ch.qos.logback:logback-classic:1.2.3'
+		testImplementation 'org.hamcrest:hamcrest-library:2.2'
+		testImplementation 'org.mockito:mockito-core:3.7.0'
+		testImplementation 'org.assertj:assertj-core:3.18.1'
+
+		testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
+		testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+
+		testImplementation 'org.eclipse.jdt.core.compiler:ecj:4.6.1'
+		testCompileOnly 'org.jetbrains:annotations:20.1.0'
+	}
+
+	test {
+		useJUnitPlatform()
+	}
+
+	repositories {
+		mavenLocal()
+		mavenCentral()
+		google()
+	}
+
+	checkstyleMain {
+		// exclude all sources in samples module
+		exclude '**/samples/**'
+	}
+}
+
+spotless {
+	java {
+		target fileTree(rootDir).matching {
+			include 'jadx-cli/src/**/java/**/*.java'
+			include 'jadx-core/src/**/java/**/*.java'
+			include 'jadx-gui/src/**/java/**/*.java'
+			include 'jadx-plugins/**/java/**/*.java'
+		}
+
+		importOrderFile 'config/code-formatter/eclipse.importorder'
+		eclipse().configFile 'config/code-formatter/eclipse.xml'
+		removeUnusedImports()
+
+		lineEndings(com.diffplug.spotless.LineEnding.UNIX)
+		encoding("UTF-8")
+		trimTrailingWhitespace()
+		endWithNewline()
+	}
+	format 'misc', {
+		target '**/*.gradle', '**/*.md', '**/*.xml', '**/.gitignore', '**/.properties'
+		targetExclude ".gradle/**", ".idea/**", "*/build/**"
+
+		lineEndings(com.diffplug.spotless.LineEnding.UNIX)
+		encoding("UTF-8")
+		trimTrailingWhitespace()
+		endWithNewline()
+	}
+}
+
+dependencyUpdates {
+	resolutionStrategy {
+		componentSelection { rules ->
+			rules.all { ComponentSelection selection ->
+				boolean rejected = ['alpha', 'beta', 'rc', 'cr', 'm', 'atlassian'].any { qualifier ->
+					selection.candidate.version ==~ /(?i).*[.-]${qualifier}[.\d-]*/
+				}
+				if (rejected) {
+					selection.reject('Release candidate')
+				}
+			}
+		}
+	}
+}
+
+task copyArtifacts(type: Sync, dependsOn: ['jadx-cli:installDist', 'jadx-gui:installDist']) {
+	destinationDir file("$buildDir/jadx")
+	['jadx-cli', 'jadx-gui'].each {
+		from tasks.getByPath(":${it}:installDist").destinationDir
+	}
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+task pack(type: Zip, dependsOn: copyArtifacts) {
+	destinationDirectory = buildDir
+	archiveFileName = "jadx-${jadxVersion}.zip"
+	from copyArtifacts.destinationDir
+}
+
+task copyExe(type: Copy, dependsOn: 'jadx-gui:createExe') {
+	group 'jadx'
+	description = 'Copy exe to build dir'
+	destinationDir buildDir
+	from tasks.getByPath('jadx-gui:createExe').outputs
+	include '*.exe'
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+task dist(dependsOn: [pack, copyExe]) {
+	group 'jadx'
+	description = 'Build jadx distribution zip'
+}
+
+task samples(dependsOn: 'jadx-samples:samples') {
+	group 'jadx'
+}
+
+task cleanBuildDir(type: Delete) {
+	group 'jadx'
+	delete buildDir
+}
+
+test.dependsOn(samples)
+
+clean.dependsOn(cleanBuildDir)
